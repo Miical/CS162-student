@@ -1,0 +1,38 @@
+1. gcc -m32 -S -o recurse.S recurse.c
+movl 8(%ebp), %eax
+subl $1, %eax
+subl $12 %esp
+pushl %eax
+call recur
+
+2.
+.text contains code
+.data contains stuff variable
+
+3. -t
+
+4.
+g global
+"F" "f" "O" The symbol is the name of a function (F) or a file (f) or an object (O) or just a normal symbol (a space).
+*UND* if the section is referenced in the file being dumped, but not defined there.
+
+5.
+recurse.o
+00000000 g     F .text	00000052 recur
+
+6.
+*UND* is disappeared.
+
+7.
+.text
+
+8.
+.bss
+.data
+
+9.
+no. they are only be created when the program is run.
+
+10.
+down
+when call a function, the assembly code subtract some number to apply for stack space.

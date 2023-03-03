@@ -1,0 +1,27 @@
+1.  gdb map
+2.  break main
+3.  run
+4.  print argv
+        $1 = (char **) 0x7fffffffe2e8
+5.  Points to a string that describes the path of the map program.
+6.  some nexti and stepi
+7.  0x5555555546d8
+8.  nexti
+9.  nexti
+10. layout asm
+11. si 6
+12. info registers
+13. stepi
+14. layout src
+15. backtrace
+16. break recur if i == 0
+17. continue
+18. backtrace
+19. some nexti
+20. 1
+21. layout asm
+22. retq
+23. layout src
+24. nexti 3
+25. continue
+26. quit
