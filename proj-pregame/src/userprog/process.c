@@ -112,6 +112,23 @@ static void start_process(void* file_name_) {
     free(pcb_to_free);
   }
 
+  /* Create argc and **argv in the user stack */
+  if_.esp -= (strlen(file_name) + 1 + 15) / 16 * 16;
+  for (int i = 0;;i++) {
+    char ch = file_name[i];
+    *((char *)if_.esp + 1) = ch;
+    if (ch == '\0') break;
+  }
+
+  if_.esp -= 8;
+  *(unsigned int *)(if_.esp + 4) = 0;
+  *(unsigned int *)if_.esp = (unsigned int)(if_.esp + 8);
+  if_.esp -= 8;
+  *(unsigned int *)(if_.esp + 4) = (unsigned int)(if_.esp + 8);
+  *(unsigned int *)if_.esp = 1;
+  if_.esp -= 4;
+  *(unsigned int *)if_.esp = 0;
+
   /* Clean up. Exit on failure or jump to userspace */
   palloc_free_page(file_name);
   if (!success) {
