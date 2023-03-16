@@ -119,6 +119,102 @@ void init_shell() {
   }
 }
 
+int exec_subprogram_pipe(struct tokens* tokens, int token_start, int token_end) {
+  /* Create arguments and redirect */
+  int argcnt = 0, tokens_length = tokens_get_length(tokens);
+  char *arg[4096];
+  for (int i = token_start; i < token_end; i++) {
+    char *token = tokens_get_token(tokens, i);
+    if (!strcmp(token, "<") && i + 1 < tokens_length) {
+      int fd = open(tokens_get_token(tokens, i+1), O_RDONLY);
+      if (fd != -1) dup2(fd, STDIN_FILENO);
+      else { printf("shell: can't open file: %s\n", tokens_get_token(tokens, i+1)); }
+      i++;
+    }
+    else if (!strcmp(token, ">") && i + 1 < tokens_length) {
+      int fd = open(tokens_get_token(tokens, i+1), O_CREAT|O_WRONLY|O_TRUNC, 0600);
+      if (fd != -1) dup2(fd, STDOUT_FILENO);
+      i++;
+    }
+    else {
+      arg[argcnt++] = token;
+    }
+  }
+  arg[tokens_length] = NULL;
+
+  /* Retrieve the program and execute */
+  char exe_path[4096], *word, *brkp;
+  char *sep = ":";
+  char *PATH = getenv("PATH");
+  if (PATH == NULL) { return 1; }
+
+  if (!execv(arg[0], arg)) return 0;
+  for (word = strtok_r(PATH, sep, &brkp);
+       word;
+       word = strtok_r(NULL, sep, &brkp)) {
+    strcpy(exe_path, word);
+    strcat(exe_path, "/");
+    strcat(exe_path, arg[0]);
+    if (!execv(exe_path, arg)) return 0;
+  }
+  printf("shell: command not found: %s\n", arg[0]);
+  return 1;
+}
+
+void exec_subprogram(struct tokens* tokens) {
+  /* Calculate the total number of process */
+  int total_proc = 1, tokens_length = tokens_get_length(tokens);
+  for (int i = 0; i < tokens_length; i++) {
+    if (!strcmp(tokens_get_token(tokens, i), "|")) {
+      ++total_proc;
+    }
+  }
+
+  /* Create pipes */
+  int pipe_arr[total_proc][2];
+  for (int i = 0; i < total_proc - 1; i++) {
+    if (pipe(pipe_arr[i]) == -1) { exit(1); }
+  }
+
+  /* Run subtasks */
+  int pid[total_proc];
+  int token_start = 0, proc_cnt = 0;
+  for (int i = 0; i <= tokens_length; i++) {
+    if (i == tokens_length || !strcmp(tokens_get_token(tokens, i), "|")) {
+      pid[proc_cnt] = fork();
+      if (pid[proc_cnt] == 0) {
+        if (proc_cnt != 0) dup2(pipe_arr[proc_cnt - 1][0], STDIN_FILENO);
+        if (proc_cnt != total_proc - 1)
+          dup2(pipe_arr[proc_cnt][1], STDOUT_FILENO);
+        for (int i = 0; i < total_proc - 1; i++) {
+          close(pipe_arr[i][0]);
+          close(pipe_arr[i][1]);
+        }
+
+        int st = exec_subprogram_pipe(tokens, token_start, i);
+
+        close(STDIN_FILENO);
+        close(STDOUT_FILENO);
+        exit(st);
+      }
+      token_start = i + 1;
+      ++proc_cnt;
+    }
+  }
+
+  /* Close pipes */
+  for (int i = 0; i < total_proc - 1; i++) {
+    close(pipe_arr[i][0]);
+    close(pipe_arr[i][1]);
+  }
+
+  /* Wait subtasks */
+  for (int i = 0; i < total_proc; i++) {
+    wait(&pid[i]);
+  }
+}
+
+
 int main(unused int argc, unused char* argv[]) {
   init_shell();
 
@@ -139,23 +235,7 @@ int main(unused int argc, unused char* argv[]) {
     if (fundex >= 0) {
       cmd_table[fundex].fun(tokens);
     } else {
-      int child_pid = fork();
-      if (child_pid == 0) {
-        int tokens_length = tokens_get_length(tokens);
-        char **arg = (char **)malloc(sizeof(char *) * (tokens_length + 1));
-        for (int i = 0; i < tokens_length; i++)
-          arg[i] = tokens_get_token(tokens, i);
-        arg[tokens_length] = NULL;
-
-        if (execv(tokens_get_token(tokens, 0), arg)) {
-          printf("shell: command not found: %s\n",
-            tokens_get_token(tokens, 0));
-          exit(1);
-        }
-        exit(0);
-      } else {
-        wait(&child_pid);
-      }
+      exec_subprogram(tokens);
     }
 
     if (shell_is_interactive)
