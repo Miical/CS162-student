@@ -176,6 +176,19 @@ void exec_subprogram(struct tokens* tokens) {
     if (pipe(pipe_arr[i]) == -1) { exit(1); }
   }
 
+  /* Disable some signals */
+  struct sigaction sa;
+  sa.sa_handler = SIG_IGN;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = 0;
+  if (sigaction(SIGTTOU, &sa, NULL) == -1) { perror("sigaction error"); exit(EXIT_FAILURE); }
+  if (sigaction(SIGTTIN, &sa, NULL) == -1) { perror("sigaction error"); exit(EXIT_FAILURE); }
+  if (sigaction(SIGCONT, &sa, NULL) == -1) { perror("sigaction error"); exit(EXIT_FAILURE); }
+  if (sigaction(SIGTSTP, &sa, NULL) == -1) { perror("sigaction error"); exit(EXIT_FAILURE); }
+  if (sigaction(SIGTERM, &sa, NULL) == -1) { perror("sigaction error"); exit(EXIT_FAILURE); }
+  if (sigaction(SIGINT,  &sa, NULL) == -1) { perror("sigaction error"); exit(EXIT_FAILURE); }
+  if (sigaction(SIGQUIT, &sa, NULL) == -1) { perror("sigaction error"); exit(EXIT_FAILURE); }
+
   /* Run subtasks */
   int pid[total_proc];
   int token_start = 0, proc_cnt = 0;
@@ -183,6 +196,8 @@ void exec_subprogram(struct tokens* tokens) {
     if (i == tokens_length || !strcmp(tokens_get_token(tokens, i), "|")) {
       pid[proc_cnt] = fork();
       if (pid[proc_cnt] == 0) {
+        /* Child Process */
+        /* Set pipe */
         if (proc_cnt != 0) dup2(pipe_arr[proc_cnt - 1][0], STDIN_FILENO);
         if (proc_cnt != total_proc - 1)
           dup2(pipe_arr[proc_cnt][1], STDOUT_FILENO);
@@ -191,14 +206,32 @@ void exec_subprogram(struct tokens* tokens) {
           close(pipe_arr[i][1]);
         }
 
+        /* Enable some signals */
+        sa.sa_handler = SIG_DFL;
+        if (sigaction(SIGTTOU, &sa, NULL) == -1) { perror("sigaction error"); exit(EXIT_FAILURE); }
+        if (sigaction(SIGTTIN, &sa, NULL) == -1) { perror("sigaction error"); exit(EXIT_FAILURE); }
+        if (sigaction(SIGCONT, &sa, NULL) == -1) { perror("sigaction error"); exit(EXIT_FAILURE); }
+        if (sigaction(SIGTSTP, &sa, NULL) == -1) { perror("sigaction error"); exit(EXIT_FAILURE); }
+        if (sigaction(SIGTERM, &sa, NULL) == -1) { perror("sigaction error"); exit(EXIT_FAILURE); }
+        if (sigaction(SIGINT,  &sa, NULL) == -1) { perror("sigaction error"); exit(EXIT_FAILURE); }
+        if (sigaction(SIGQUIT, &sa, NULL) == -1) { perror("sigaction error"); exit(EXIT_FAILURE); }
+
+        /* Set process group*/
+        setpgid(0, 0);
+
+        /* Run subprogram */
         int st = exec_subprogram_pipe(tokens, token_start, i);
 
+        /* Close pipe and Exit*/
         close(STDIN_FILENO);
         close(STDOUT_FILENO);
         exit(st);
+      } else {
+        /* Parent Process */
+        tcsetpgrp(STDIN_FILENO, pid[proc_cnt]);
+        token_start = i + 1;
+        ++proc_cnt;
       }
-      token_start = i + 1;
-      ++proc_cnt;
     }
   }
 
@@ -212,6 +245,7 @@ void exec_subprogram(struct tokens* tokens) {
   for (int i = 0; i < total_proc; i++) {
     wait(&pid[i]);
   }
+  tcsetpgrp(STDIN_FILENO, getpgrp());
 }
 
 
