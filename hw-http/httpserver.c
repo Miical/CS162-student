@@ -315,6 +315,11 @@ void* handle_clients(void* void_request_handler) {
   /* TODO: PART 7 */
   /* PART 7 BEGIN */
 
+  while (1) {
+    int fd = wq_pop(&work_queue);
+    request_handler(fd);
+  }
+
   /* PART 7 END */
 }
 
@@ -326,9 +331,28 @@ void init_thread_pool(int num_threads, void (*request_handler)(int)) {
   /* TODO: PART 7 */
   /* PART 7 BEGIN */
 
+  wq_init(&work_queue);
+
+  pid_t tids[num_threads];
+  for (int i = 0; i < num_threads; i++) {
+    pthread_create(&tids[i], NULL, handle_clients, (void *)request_handler);
+  }
+
   /* PART 7 END */
 }
 #endif
+
+struct request_handle {
+  void (*request_handler)(int);
+  int fd;
+};
+
+void *request_thread(void *vargp) {
+  pthread_detach(pthread_self());
+  struct request_handle* r = (struct request_handle *) vargp;
+  r->request_handler(r->fd);
+  return NULL;
+}
 
 /*
  * Opens a TCP stream socket on all interfaces with port number PORTNO. Saves
@@ -428,6 +452,14 @@ void serve_forever(int* socket_number, void (*request_handler)(int)) {
 
     /* PART 5 BEGIN */
 
+    pid_t pid = fork();
+    if (pid == 0) {
+      request_handler(client_socket_number);
+      exit(0);
+    } else {
+      close(client_socket_number);
+    }
+
     /* PART 5 END */
 
 #elif THREADSERVER
@@ -443,6 +475,10 @@ void serve_forever(int* socket_number, void (*request_handler)(int)) {
 
     /* PART 6 BEGIN */
 
+    pid_t tid;
+    struct request_handle r = { request_handler, client_socket_number };
+    pthread_create(&tid, NULL, request_thread, (void *)&r);
+
     /* PART 6 END */
 #elif POOLSERVER
     /*
@@ -454,6 +490,8 @@ void serve_forever(int* socket_number, void (*request_handler)(int)) {
      */
 
     /* PART 7 BEGIN */
+
+    wq_push(&work_queue, client_socket_number);
 
     /* PART 7 END */
 #endif
