@@ -40,23 +40,48 @@ void serve_file(int fd, char* path) {
   /* TODO: PART 2 */
   /* PART 2 BEGIN */
 
+  int file_fd = open(path, O_RDONLY);
+  struct stat stat_buf;
+  if (stat(path, &stat_buf) == -1)
+    exit(errno);
+  size_t sz = stat_buf.st_size;
+
+  char *sz_buf = (char *) malloc(16 * sizeof(char));
+  snprintf(sz_buf, 16, "%zu", sz);
+
   http_start_response(fd, 200);
   http_send_header(fd, "Content-Type", http_get_mime_type(path));
-  http_send_header(fd, "Content-Length", "0"); // TODO: change this line too
+  http_send_header(fd, "Content-Length", sz_buf); // TODO: change this line too
   http_end_headers(fd);
+
+  char *read_buf = (char *)malloc(sz * sizeof(char));
+  read(file_fd, read_buf, sz);
+  write(fd, read_buf, sz);
+
+  free(sz_buf);
+  free(read_buf);
 
   /* PART 2 END */
 }
 
 void serve_directory(int fd, char* path) {
-  http_start_response(fd, 200);
-  http_send_header(fd, "Content-Type", http_get_mime_type(".html"));
-  http_end_headers(fd);
-
   /* TODO: PART 3 */
   /* PART 3 BEGIN */
 
+  char *index_buf = malloc((strlen(path) + 15) * sizeof(char));
+  http_format_index(index_buf, path);
+
+  struct stat stat_buf;
+  if (stat(index_buf, &stat_buf) != -1) {
+    serve_file(fd, index_buf);
+    free(index_buf);
+    return;
+  }
+  free(index_buf);
+
   // TODO: Open the directory (Hint: opendir() may be useful here)
+
+  DIR *dirp = opendir(path);
 
   /**
    * TODO: For each entry in the directory (Hint: look at the usage of readdir() ),
@@ -64,7 +89,42 @@ void serve_directory(int fd, char* path) {
    * function in libhttp.c may be useful here)
    */
 
+  struct dirent* dp;
+  char *send_buf = (char *) malloc(8192 * sizeof(char));
+  char *p = send_buf;
+
+  while (dirp) {
+    errno = 0;
+    if ((dp = readdir(dirp)) != NULL) {
+      http_format_href(p, path, dp->d_name);
+      p += strlen(p) + 1;
+      *(p - 1) = '\n';
+    } else {
+      closedir(dirp);
+      break;
+    }
+  }
+
+  size_t sz = p - send_buf;
+  char *sz_buf = (char *) malloc(16 * sizeof(char));
+  snprintf(sz_buf, 16, "%zu", sz);
+
+  http_start_response(fd, 200);
+  http_send_header(fd, "Content-Type", http_get_mime_type(".html"));
+  http_send_header(fd, "Content-Length", sz_buf); // TODO: change this line too
+  http_end_headers(fd);
+
+  write(fd, send_buf, sz);
+
+  free(sz_buf);
+  free(send_buf);
+
   /* PART 3 END */
+}
+
+void send_not_found(int fd) {
+  http_start_response(fd, 404);
+  http_end_headers(fd);
 }
 
 /*
@@ -118,11 +178,25 @@ void handle_files_request(int fd) {
 
   /* PART 2 & 3 BEGIN */
 
+  struct stat stat_buf;
+  if (stat(path, &stat_buf) == -1) {
+    send_not_found(fd);
+    close(fd);
+    return;
+  }
+
+  if (S_ISREG(stat_buf.st_mode)) {
+    serve_file(fd, path);
+  } else {
+    serve_directory(fd, path);
+  }
+
   /* PART 2 & 3 END */
 
   close(fd);
   return;
 }
+
 
 /*
  * Opens a connection to the proxy target (hostname=server_proxy_hostname and
@@ -187,6 +261,7 @@ void handle_proxy_request(int fd) {
 
   /* TODO: PART 4 */
   /* PART 4 BEGIN */
+
 
   /* PART 4 END */
 }
@@ -263,6 +338,15 @@ void serve_forever(int* socket_number, void (*request_handler)(int)) {
    */
 
   /* PART 1 BEGIN */
+
+  if (bind(*socket_number, (const struct sockaddr *)&server_address,
+    sizeof(server_address)) == -1) {
+    exit(errno);
+  }
+  if (listen(*socket_number, 1024) == -1) {
+    close(*socket_number);
+    exit(errno);
+  }
 
   /* PART 1 END */
   printf("Listening on port %d...\n", server_port);
