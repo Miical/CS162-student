@@ -197,6 +197,30 @@ void handle_files_request(int fd) {
   return;
 }
 
+struct dual_fd {
+  int fd_from, fd_to;
+};
+
+void *thread(void *vargp) {
+  struct dual_fd *fds = (struct dual_fd *) vargp;
+  int fd_from = fds->fd_from, fd_to = fds->fd_to;
+  char *buf = (char *) malloc(8192 * sizeof(char));
+  int bytes_num;
+
+  while (1) {
+    bytes_num = read(fd_from, buf, 8192);
+    if (!bytes_num || bytes_num == -1) break;
+    // write(STDOUT_FILENO, buf, bytes_num);
+
+    bytes_num = write(fd_to, buf, bytes_num);
+    if (!bytes_num || bytes_num == -1) break;
+  }
+  close(fd_from);
+  close(fd_to);
+
+  free(buf);
+}
+
 
 /*
  * Opens a connection to the proxy target (hostname=server_proxy_hostname and
@@ -262,6 +286,15 @@ void handle_proxy_request(int fd) {
   /* TODO: PART 4 */
   /* PART 4 BEGIN */
 
+  unsigned long thread_c2p, thread_p2c;
+  struct dual_fd c2p_fds = { fd, target_fd },
+    p2c_fds = { target_fd, fd };
+  pthread_create(&thread_c2p, NULL, thread, (void *) &c2p_fds);
+  pthread_create(&thread_p2c, NULL, thread, (void *) &p2c_fds);
+
+  int st;
+  pthread_join(thread_c2p, (void **)&st);
+  pthread_join(thread_p2c, (void **)&st);
 
   /* PART 4 END */
 }
