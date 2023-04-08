@@ -201,6 +201,7 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
   struct Elf32_Ehdr ehdr;
   struct file* file = NULL;
   off_t file_ofs;
+  void *heap_base = NULL;
   bool success = false;
   int i;
 
@@ -267,6 +268,8 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
             read_bytes = 0;
             zero_bytes = ROUND_UP(page_offset + phdr.p_memsz, PGSIZE);
           }
+          if ((void *)(mem_page + read_bytes + zero_bytes) > heap_base)
+            heap_base = (void *)(mem_page + read_bytes + zero_bytes);
           if (!load_segment(file, file_page, (void*)mem_page, read_bytes, zero_bytes, writable))
             goto done;
         } else
@@ -278,6 +281,10 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
   /* Set up stack. */
   if (!setup_stack(esp))
     goto done;
+
+  /* Set up heap. */
+  t->heap_base = heap_base;
+  t->heap_break = heap_base;
 
   /* Start address. */
   *eip = (void (*)(void))ehdr.e_entry;
